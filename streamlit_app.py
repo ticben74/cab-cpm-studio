@@ -4,16 +4,13 @@ import math
 from datetime import datetime
 import pandas as pd
 
-# === ربط Grok-4 API (آمن عبر Secrets) ===
+# === ربط OpenAI API (آمن عبر Secrets) ===
 try:
-    client = OpenAI(
-        api_key=st.secrets["XAI_API_KEY"],  # أضف المفتاح في Streamlit Cloud > Settings > Secrets
-        base_url="https://api.x.ai/v1"
-    )
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     API_CONNECTED = True
 except Exception as e:
     API_CONNECTED = False
-    st.error(f"خطأ في الاتصال بـ Grok-4: {e}")
+    st.error(f"خطأ في الاتصال بـ OpenAI: {e}")
 
 # === إعداد الصفحة ===
 st.set_page_config(
@@ -29,38 +26,31 @@ st.markdown("**منصة الذكاء الاصطناعي لإدارة المشا�
 st.markdown("*مبنية على إطار CAB-CPM® – Value Engineering & Meaning Systems*")
 st.markdown("---")
 
-# === واجهة الدردشة الذكية (Grok-4) ===
+# === وكيل ذكي (ChatGPT - OpenAI) ===
 with st.expander("وكيل ذكي: أسأل عن منهجية CAB-CPM®", expanded=True):
-    st.markdown("**مدعوم بـ Grok-4 من xAI – اسأل عن V، الزرع، الدورة الخماسية**")
+    st.markdown("**مدعوم بـ ChatGPT (OpenAI) – اسأل عن V، الزرع، الدورة الخماسية**")
 
     # تهيئة المحادثة
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "مرحباً! أنا **وكيل CAB-CPM®** مدعوم بـ **Grok-4**. اسألني أي شيء عن المنهجية، مثل:\n\n- ما معنى V = (M × S × C)^R؟\n- كيف أطبق الزرع السياسي؟\n- اشرح الدورة الخماسية."}
+            {"role": "assistant", "content": "مرحباً! أنا **وكيل CAB-CPM®** مدعوم بـ **ChatGPT**. اسألني أي شيء عن المنهجية، مثل:\n\n- ما معنى V = (M × S × C)^R؟\n- كيف أطبق الزرع السياسي؟\n- اشرح الدورة الخماسية."}
         ]
 
-    # عرض المحادثة
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # إدخال السؤال
-    if prompt := st.chat_input("اكتب سؤالك هنا..."):
+    prompt = st.chat_input("اكتب سؤالك هنا...")
+    if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # الرد باستخدام Grok-4
         with st.chat_message("assistant"):
             if not API_CONNECTED:
-                st.error("Grok-4 غير متصل. تحقق من المفتاح في Secrets.")
+                st.error("OpenAI غير متصل. تحقق من المفتاح في Secrets.")
             else:
-                with st.spinner("Grok-4 يفكر..."):
-                    try:
-                        response = client.chat.completions.create(
-                            model="grok-4-latest",
-                            messages=[
-                                {"role": "system", "content": """
+                system_prompt = """
 أنت وكيل CAB-CPM® الذكي. أجب بالعربية الفصحى فقط، مستنداً إلى كتاب:
 'Value Engineering and the Management Systems of Meaning' لأحمد عماد بن عمارة (2025).
 
@@ -69,20 +59,41 @@ with st.expander("وكيل ذكي: أسأل عن منهجية CAB-CPM®", expand
 - الدورة الخماسية: التشخيص → السرد → التخطيط → الإنتاج → الإرث
 - الزرع السياسي (Grafting): ربط المشروع بسياسات عامة
 - خريطة الأصول الثقافية (CAG)
-
 كن دقيقاً، موجزاً، واستخدم أمثلة من تونس (نابل، الحمامات، المالوف، الفخار).
-                                """},
-                                {"role": "user", "content": prompt}
-                            ],
-                            max_tokens=600,
-                            temperature=0.3
-                        )
-                        answer = response.choices[0].message.content
-                        st.markdown(answer)
-                        st.session_state.messages.append({"role": "assistant", "content": answer})
-                    except Exception as e:
-                        st.error(f"خطأ في الاتصال بـ Grok-4: {e}")
-                        st.info("جرب مرة أخرى أو تحقق من الحدود (Spend Limit)")
+                """.strip()
+
+                # اختر: استجابة عادية أو بثّ مباشر
+                use_streaming = True
+
+                try:
+                    if use_streaming:
+                        with st.spinner("ChatGPT يفكر..."):
+                            stream = client.responses.stream(
+                                model="gpt-4o-mini",
+                                input=f"{system_prompt}\n\nسؤال المستخدم: {prompt}"
+                            )
+                            placeholder = st.empty()
+                            collected = ""
+                            for event in stream:
+                                if event.type == "response.output_text.delta":
+                                    collected += event.delta
+                                    placeholder.markdown(collected)
+                            final = stream.get_final_response()
+                            answer = final.output_text
+                    else:
+                        with st.spinner("ChatGPT يفكر..."):
+                            response = client.responses.create(
+                                model="gpt-4o-mini",
+                                input=f"{system_prompt}\n\nسؤال المستخدم: {prompt}"
+                            )
+                            answer = response.output_text
+
+                    st.markdown(answer)
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
+
+                except Exception as e:
+                    st.error(f"خطأ في الاتصال بـ OpenAI: {e}")
+                    st.info("جرب مرة أخرى أو تحقق من الحدود (Spend Limit)")
 
 # === جمع بيانات المشاركين ===
 st.markdown("---")
@@ -119,13 +130,12 @@ with st.expander("أريد المشاركة في مشروع ثقافي", expande
                 st.success(f"شكراً {name}! تم استلام طلبك.")
                 st.balloons()
 
-    # عرض المشاركين (لوحة إدارة)
     if 'participants' in st.session_state and st.session_state.participants:
         st.subheader("المشاركون (لوحة الإدارة)")
         df = pd.DataFrame(st.session_state.participants)
         st.dataframe(df, use_container_width=True)
         st.download_button(
-            label="تصدير كـ Excel",
+            label="تصدير كـ CSV",
             data=df.to_csv(index=False).encode('utf-8'),
             file_name="cab_cpm_participants.csv",
             mime="text/csv"
@@ -146,6 +156,10 @@ st.metric("القيمة المركبة V", f"{v:.3f}", delta=status)
 st.progress(min(v / 3.0, 1.0))
 
 # === تذييل ===
+st.markdown("---")
+st.success("**CAB-CPM® Studio v3.0** – مدعوم بـ **ChatGPT (OpenAI)**")
+st.caption("جميع البيانات آمنة ومحفوظة مؤقتاً. للإصدار الدائم: سيتم ربط Google Sheets قريباً.")
+
 st.markdown("---")
 st.success("**CAB-CPM® Studio v3.0** – مدعوم بـ **Grok-4 من xAI**")
 st.caption("جميع البيانات آمنة ومحفوظة مؤقتاً. للإصدار الدائم: سيتم ربط Google Sheets قريباً.")
