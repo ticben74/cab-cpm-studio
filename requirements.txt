@@ -1,4 +1,13 @@
+# التبعيات المطلوبة لتطبيق Streamlit CAB-CPM® (باستخدام Gemini)
+
+# مكتبة Streamlit لبناء واجهة المستخدم
 streamlit>=1.30
-dashscope>=1.18
+
+# مكتبة Gemini API للوصول إلى نماذج Google
+google-genai
+
+# مكتبة Pandas لمعالجة الجداول (بيانات المشاركين)
 pandas>=2.0
+
+# مكتبة Requests للاتصال بأي واجهة API خارجية (مثل Ollama المحلي)
 requests>=2.31
