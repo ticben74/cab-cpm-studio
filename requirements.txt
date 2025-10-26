@@ -1,3 +1,4 @@
-streamlit
-openai>=1.0.0
-pandas
+streamlit>=1.30
+dashscope>=1.18
+pandas>=2.0
+requests>=2.31
