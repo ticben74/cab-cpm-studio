@@ -4,26 +4,29 @@ import pandas as pd
 import requests
 from http import HTTPStatus
 import os
-# استيراد مكتبة Gemini
+
+# === محاولة استيراد مكتبات LLM ===
 try:
     from google import genai
     from google.genai import types
+    GEMINI_IMPORTED = True
 except ImportError:
+    GEMINI_IMPORTED = False
     st.warning("⚠️ لتشغيل Gemini، الرجاء تثبيت: pip install google-genai")
-    
-# === إلغاء محاولة الاتصال بـ DashScope ===
+
+# إلغاء محاولة الاتصال بـ DashScope
 DASHSCOPE_AVAILABLE = False
 st.info("💎 تم تفعيل وكيل **Gemini®** كنموذج سحابي أساسي في هذا الإصدار.")
 
 # === محاولة الاتصال بـ Gemini (Google) ===
 GEMINI_AVAILABLE = False
-client = None # تعريف العميل خارجياً
+client = None
 try:
     gemini_api_key = st.secrets.get("GEMINI_API_KEY", "")
-    if gemini_api_key and 'genai' in globals(): # التأكد من استيراد المكتبة بنجاح
+    if gemini_api_key and GEMINI_IMPORTED:
         client = genai.Client(api_key=gemini_api_key)
         GEMINI_AVAILABLE = True
-    else:
+    elif not gemini_api_key:
         st.error("❌ مفتاح Gemini API (GEMINI_API_KEY) غير مضبوط في secrets.toml. لن يعمل الوكيل السحابي.")
 except Exception as e:
     st.warning(f"❌ فشل إعداد Gemini: {e}. سيتم استخدام الوضع المحلي (Ollama).")
@@ -53,7 +56,7 @@ def call_ollama(prompt: str, system_prompt: str, model: str = "qwen2.5:7b") -> s
     except Exception as e:
         raise e
 
-# === دالة اتصال جديدة بـ Gemini ===
+# === دالة اتصال بـ Gemini ===
 def call_gemini(prompt: str, system_prompt: str, model: str = "gemini-2.5-flash") -> str:
     """يتصل بنموذج Gemini كنموذج سحابي أساسي."""
     global client
@@ -67,17 +70,16 @@ def call_gemini(prompt: str, system_prompt: str, model: str = "gemini-2.5-flash"
                 types.Content(role="user", parts=[types.Part.from_text(prompt)]),
             ],
             config=types.GenerateContentConfig(
-                system_instruction=system_prompt, # استخدام system_instruction لضبط دور الوكيل
+                system_instruction=system_prompt,
                 temperature=0.3,
             )
         )
         return response.text
     except Exception as e:
-        # إظهار خطأ Gemini بوضوح في حالة الفشل
         raise Exception(f"فشل الاتصال بـ Gemini: {e}")
 
 # ---
-# === وكلاء متعددين (تم تحديث التسلسل لـ Gemini أولاً) ===
+# === وكلاء متعددين (Gemini أولاً، ثم Ollama) ===
 # ---
 
 def agent_cab_expert(question: str) -> str:
@@ -143,7 +145,7 @@ def coordinator(question: str) -> str:
         return agent_cab_expert(question)
 
 # ---
-# === إعداد الصفحة وبقية الكود ===
+# === إعداد الصفحة ===
 # ---
 st.set_page_config(
     page_title="CAB-CPM® Studio",
@@ -157,9 +159,8 @@ st.markdown("**منصة الذكاء الاصطناعي لإدارة المشا�
 st.markdown("*مبنية على إطار CAB-CPM® – Value Engineering & Meaning Systems*")
 st.markdown("---")
 
-# === وكيل ذكي ===
+# === وكيل ذكي (واجهة الدردشة) ===
 with st.expander("وكيل ذكي: أسأل عن منهجية CAB-CPM®", expanded=True):
-    # تحديث نص الشرح ليشمل Gemini فقط
     backend_status = []
     if GEMINI_AVAILABLE: backend_status.append("Gemini (Google)")
     backend_status.append("وكيل محلي (Ollama)")
@@ -237,7 +238,7 @@ with st.expander("أريد المشاركة في مشروع ثقافي", expande
             mime="text/csv"
         )
 
-# === حاسبة القيمة المركبة (نفس الكود) ===
+# === حاسبة القيمة المركبة ===
 st.markdown("---")
 st.subheader("حساب القيمة المركبة V = (M × S × C)^R")
 col_m, col_s, col_c, col_r = st.columns(4)
