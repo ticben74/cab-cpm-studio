@@ -1,39 +1,156 @@
 import streamlit as st
-from openai import OpenAI
-import math
 from datetime import datetime
 import pandas as pd
+import requests
+from http import HTTPStatus
+import os
 
-# === ربط OpenAI API (آمن عبر Secrets) ===
+# === محاولة الاتصال بـ DashScope (Qwen من Alibaba Cloud) ===
+DASHSCOPE_AVAILABLE = False
 try:
-    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-    API_CONNECTED = True
+    import dashscope
+    dashscope.api_key = st.secrets["DASHSCOPE_API_KEY"]
+    DASHSCOPE_AVAILABLE = True
 except Exception as e:
-    API_CONNECTED = False
-    st.error(f"خطأ في الاتصال بـ OpenAI: {e}")
+    st.warning(f"DashScope غير متاح: {e}. سيتم استخدام الوضع المحلي (Ollama) إذا كان متاحًا.")
+
+# === دالة للاتصال بـ Ollama (محلي - Offline) ===
+def call_ollama(prompt: str, system_prompt: str, model: str = "qwen2.5:7b") -> str:
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "system": system_prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.3,
+            "num_ctx": 4096
+        }
+    }
+    try:
+        response = requests.post(url, json=payload, timeout=120)
+        if response.status_code == 200:
+            return response.json().get("response", "لا يوجد رد من النموذج المحلي.")
+        else:
+            raise Exception(f"خطأ من Ollama: {response.status_code} - {response.text}")
+    except requests.exceptions.ConnectionError:
+        raise Exception("Ollama غير قيد التشغيل. شغّل: `ollama serve`")
+    except Exception as e:
+        raise e
+
+# === وكلاء متعددين (Multi-Agent System) ===
+def agent_cab_expert(question: str) -> str:
+    sys_prompt = """
+أنت خبير CAB-CPM®. أجب بالعربية الفصحى فقط، مستنداً إلى كتاب:
+'Value Engineering and the Management Systems of Meaning' لأحمد عماد بن عمارة (2025).
+
+ركز على:
+- المعادلة: V = (M × S × C)^R
+- الدورة الخماسية: التشخيص → السرد → التخطيط → الإنتاج → الإرث
+- الزرع السياسي (Grafting): ربط المشروع بسياسات عامة
+- خريطة الأصول الثقافية (CAG)
+كن دقيقاً، موجزاً، واستخدم أمثلة من تونس (نابل، الحمامات، المالوف، الفخار).
+    """.strip()
+    if DASHSCOPE_AVAILABLE:
+        try:
+            response = dashscope.Generation.call(
+                model='qwen-plus',
+                prompt=f"{sys_prompt}\n\nالسؤال: {question}",
+                stream=False
+            )
+            if response.status_code == HTTPStatus.OK:
+                return response.output['text']
+            else:
+                raise Exception(f"{response.code}: {response.message}")
+        except Exception as e:
+            st.warning(f"فشل DashScope، نحاول Ollama... ({e})")
+    # fallback to Ollama
+    return call_ollama(question, sys_prompt, model="qwen2.5:7b")
+
+def agent_value_analyst(question: str) -> str:
+    sys_prompt = """
+أنت محلل قيم في منهجية CAB-CPM®. مهمتك تحليل المشاريع الثقافية باستخدام المعادلة:
+V = (M × S × C)^R
+حيث:
+- M = المعنى (السرد الثقافي)
+- S = الاستدامة (الدعم المؤسسي/المالي)
+- C = التماسك (الروابط المحلية والعالمية)
+- R = التجديد (من الزرع السياسي)
+
+اقترح قيمًا رقمية منطقية، وفسّر كيف يمكن رفع القيمة V.
+استخدم أمثلة من السياق التونسي (مثل مهرجان المالوف، ورش الفخار في نابل).
+    """.strip()
+    if DASHSCOPE_AVAILABLE:
+        try:
+            response = dashscope.Generation.call(
+                model='qwen-plus',
+                prompt=f"{sys_prompt}\n\nالسؤال: {question}",
+                stream=False
+            )
+            if response.status_code == HTTPStatus.OK:
+                return response.output['text']
+            else:
+                raise Exception(f"{response.code}: {response.message}")
+        except Exception as e:
+            st.warning(f"فشل DashScope، نحاول Ollama... ({e})")
+    return call_ollama(question, sys_prompt, model="qwen2.5:7b")
+
+def agent_grafting(question: str) -> str:
+    sys_prompt = """
+أنت خبير في "الزرع السياسي" (Political Grafting) ضمن منهجية CAB-CPM®.
+مهمتك ربط المشاريع الثقافية بسياسات عمومية تونسية حالية، مثل:
+- الاستراتيجية الوطنية للثقافة 2023–2028
+- برامج وزارة الشؤون الثقافية
+- مشاريع البلديات (نابل، الحمامات...)
+- برامج الاتحاد الأوروبي للتراث
+
+اقترح شراكات، تمويلات، أو آليات تضمين المشروع في السياسات العامة.
+    """.strip()
+    if DASHSCOPE_AVAILABLE:
+        try:
+            response = dashscope.Generation.call(
+                model='qwen-plus',
+                prompt=f"{sys_prompt}\n\nالسؤال: {question}",
+                stream=False
+            )
+            if response.status_code == HTTPStatus.OK:
+                return response.output['text']
+            else:
+                raise Exception(f"{response.code}: {response.message}")
+        except Exception as e:
+            st.warning(f"فشل DashScope، نحاول Ollama... ({e})")
+    return call_ollama(question, sys_prompt, model="qwen2.5:7b")
+
+def coordinator(question: str) -> str:
+    q_lower = question.lower()
+    if any(kw in q_lower for kw in ["معادلة", "v =", "قيمة", "حساب", "m×s×c", "تجديد", "استدامة", "تماسك"]):
+        return agent_value_analyst(question)
+    elif any(kw in q_lower for kw in ["زرع", "سياسة", "شراكة", "وزارة", "استراتيجية", "تمويل", "بلدية"]):
+        return agent_grafting(question)
+    else:
+        return agent_cab_expert(question)
 
 # === إعداد الصفحة ===
 st.set_page_config(
     page_title="CAB-CPM® Studio",
-    page_icon="Compass",
+    page_icon="🧭",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # === العنوان ===
-st.title("Compass CAB-CPM® Studio")
+st.title("🧭 Compass CAB-CPM® Studio")
 st.markdown("**منصة الذكاء الاصطناعي لإدارة المشاريع الثقافية والإبداعية**")
 st.markdown("*مبنية على إطار CAB-CPM® – Value Engineering & Meaning Systems*")
 st.markdown("---")
 
-# === وكيل ذكي (ChatGPT - OpenAI) ===
+# === وكيل ذكي (Qwen + Multi-Agent) ===
 with st.expander("وكيل ذكي: أسأل عن منهجية CAB-CPM®", expanded=True):
-    st.markdown("**مدعوم بـ ChatGPT (OpenAI) – اسأل عن V، الزرع، الدورة الخماسية**")
+    st.markdown("**مدعوم بـ Qwen (Alibaba Cloud) + وكيل محلي (Ollama)**")
 
-    # تهيئة المحادثة
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "مرحباً! أنا **وكيل CAB-CPM®** مدعوم بـ **ChatGPT**. اسألني أي شيء عن المنهجية، مثل:\n\n- ما معنى V = (M × S × C)^R؟\n- كيف أطبق الزرع السياسي؟\n- اشرح الدورة الخماسية."}
+            {"role": "assistant", "content": "مرحباً! أنا **وكيل CAB-CPM®** الذكي. اسألني عن:\n\n- معادلة القيمة V = (M × S × C)^R\n- الزرع السياسي\n- الدورة الخماسية\n- خريطة الأصول الثقافية (CAG)"}
         ]
 
     for message in st.session_state.messages:
@@ -47,53 +164,14 @@ with st.expander("وكيل ذكي: أسأل عن منهجية CAB-CPM®", expand
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            if not API_CONNECTED:
-                st.error("OpenAI غير متصل. تحقق من المفتاح في Secrets.")
-            else:
-                system_prompt = """
-أنت وكيل CAB-CPM® الذكي. أجب بالعربية الفصحى فقط، مستنداً إلى كتاب:
-'Value Engineering and the Management Systems of Meaning' لأحمد عماد بن عمارة (2025).
-
-ركز على:
-- المعادلة: V = (M × S × C)^R
-- الدورة الخماسية: التشخيص → السرد → التخطيط → الإنتاج → الإرث
-- الزرع السياسي (Grafting): ربط المشروع بسياسات عامة
-- خريطة الأصول الثقافية (CAG)
-كن دقيقاً، موجزاً، واستخدم أمثلة من تونس (نابل، الحمامات، المالوف، الفخار).
-                """.strip()
-
-                # اختر: استجابة عادية أو بثّ مباشر
-                use_streaming = True
-
-                try:
-                    if use_streaming:
-                        with st.spinner("ChatGPT يفكر..."):
-                            stream = client.responses.stream(
-                                model="gpt-4o-mini",
-                                input=f"{system_prompt}\n\nسؤال المستخدم: {prompt}"
-                            )
-                            placeholder = st.empty()
-                            collected = ""
-                            for event in stream:
-                                if event.type == "response.output_text.delta":
-                                    collected += event.delta
-                                    placeholder.markdown(collected)
-                            final = stream.get_final_response()
-                            answer = final.output_text
-                    else:
-                        with st.spinner("ChatGPT يفكر..."):
-                            response = client.responses.create(
-                                model="gpt-4o-mini",
-                                input=f"{system_prompt}\n\nسؤال المستخدم: {prompt}"
-                            )
-                            answer = response.output_text
-
-                    st.markdown(answer)
-                    st.session_state.messages.append({"role": "assistant", "content": answer})
-
-                except Exception as e:
-                    st.error(f"خطأ في الاتصال بـ OpenAI: {e}")
-                    st.info("جرب مرة أخرى أو تحقق من الحدود (Spend Limit)")
+            try:
+                with st.spinner("الوكيل الذكي يفكر..."):
+                    answer = coordinator(prompt)
+                st.markdown(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+            except Exception as e:
+                st.error(f"فشل في توليد الرد: {e}")
+                st.info("تأكد من:\n- DashScope API key (في Secrets)\n- أو تشغيل Ollama محليًا (`ollama serve`)")
 
 # === جمع بيانات المشاركين ===
 st.markdown("---")
@@ -151,15 +229,12 @@ c = col_c.slider("C – التماسك", 0.0, 1.0, 0.70, 0.05, help="الربط 
 r = col_r.slider("R – التجديد", 1.0, 2.0, 1.3, 0.1, help="من الزرع السياسي")
 
 v = (m * s * c) ** r
-status = "مستدام ومتماسك" if v >= 1.5 else "يحتاج تحسين"
-st.metric("القيمة المركبة V", f"{v:.3f}", delta=status)
+status = "🟢 مستدام ومتماسك" if v >= 1.5 else "🟠 يحتاج تحسين"
+st.metric("القيمة المركبة V", f"{v:.3f}", delta=status.split()[-1])
 st.progress(min(v / 3.0, 1.0))
 
 # === تذييل ===
 st.markdown("---")
-st.success("**CAB-CPM® Studio v3.0** – مدعوم بـ **ChatGPT (OpenAI)**")
-st.caption("جميع البيانات آمنة ومحفوظة مؤقتاً. للإصدار الدائم: سيتم ربط Google Sheets قريباً.")
-
-st.markdown("---")
-st.success("**CAB-CPM® Studio v3.0** – مدعوم بـ **Grok-4 من xAI**")
-st.caption("جميع البيانات آمنة ومحفوظة مؤقتاً. للإصدار الدائم: سيتم ربط Google Sheets قريباً.")
+backend = "Qwen (DashScope)" if DASHSCOPE_AVAILABLE else "Qwen (Ollama محلي)"
+st.success(f"**CAB-CPM® Studio v3.1** – مدعوم بـ **{backend}**")
+st.caption("البيانات مؤقتة. للنسخة الدائمة: سيتم دعم SQLite وGoogle Sheets قريباً.")
