@@ -3,14 +3,16 @@ from datetime import datetime
 import pandas as pd
 import requests
 from http import HTTPStatus
-import os
 
 # === محاولة الاتصال بـ DashScope (Qwen من Alibaba Cloud) ===
 DASHSCOPE_AVAILABLE = False
 try:
     import dashscope
-    dashscope.api_key = st.secrets["DASHSCOPE_API_KEY"]
-    DASHSCOPE_AVAILABLE = True
+    dashscope.api_key = st.secrets.get("DASHSCOPE_API_KEY", "")
+    if dashscope.api_key:
+        DASHSCOPE_AVAILABLE = True
+    else:
+        st.info("مفتاح DashScope غير مضبوط. سيتم استخدام الوضع المحلي (Ollama) إذا كان متاحًا.")
 except Exception as e:
     st.warning(f"DashScope غير متاح: {e}. سيتم استخدام الوضع المحلي (Ollama) إذا كان متاحًا.")
 
@@ -32,13 +34,13 @@ def call_ollama(prompt: str, system_prompt: str, model: str = "qwen2.5:7b") -> s
         if response.status_code == 200:
             return response.json().get("response", "لا يوجد رد من النموذج المحلي.")
         else:
-            raise Exception(f"خطأ من Ollama: {response.status_code} - {response.text}")
+            raise Exception(f"خطأ من Ollama: {response.status_code}")
     except requests.exceptions.ConnectionError:
         raise Exception("Ollama غير قيد التشغيل. شغّل: `ollama serve`")
     except Exception as e:
         raise e
 
-# === وكلاء متعددين (Multi-Agent System) ===
+# === وكلاء متعددين ===
 def agent_cab_expert(question: str) -> str:
     sys_prompt = """
 أنت خبير CAB-CPM®. أجب بالعربية الفصحى فقط، مستنداً إلى كتاب:
@@ -64,19 +66,12 @@ def agent_cab_expert(question: str) -> str:
                 raise Exception(f"{response.code}: {response.message}")
         except Exception as e:
             st.warning(f"فشل DashScope، نحاول Ollama... ({e})")
-    # fallback to Ollama
     return call_ollama(question, sys_prompt, model="qwen2.5:7b")
 
 def agent_value_analyst(question: str) -> str:
     sys_prompt = """
 أنت محلل قيم في منهجية CAB-CPM®. مهمتك تحليل المشاريع الثقافية باستخدام المعادلة:
 V = (M × S × C)^R
-حيث:
-- M = المعنى (السرد الثقافي)
-- S = الاستدامة (الدعم المؤسسي/المالي)
-- C = التماسك (الروابط المحلية والعالمية)
-- R = التجديد (من الزرع السياسي)
-
 اقترح قيمًا رقمية منطقية، وفسّر كيف يمكن رفع القيمة V.
 استخدم أمثلة من السياق التونسي (مثل مهرجان المالوف، ورش الفخار في نابل).
     """.strip()
@@ -98,12 +93,7 @@ V = (M × S × C)^R
 def agent_grafting(question: str) -> str:
     sys_prompt = """
 أنت خبير في "الزرع السياسي" (Political Grafting) ضمن منهجية CAB-CPM®.
-مهمتك ربط المشاريع الثقافية بسياسات عمومية تونسية حالية، مثل:
-- الاستراتيجية الوطنية للثقافة 2023–2028
-- برامج وزارة الشؤون الثقافية
-- مشاريع البلديات (نابل، الحمامات...)
-- برامج الاتحاد الأوروبي للتراث
-
+مهمتك ربط المشاريع الثقافية بسياسات عمومية تونسية حالية.
 اقترح شراكات، تمويلات، أو آليات تضمين المشروع في السياسات العامة.
     """.strip()
     if DASHSCOPE_AVAILABLE:
@@ -138,13 +128,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# === العنوان ===
 st.title("🧭 Compass CAB-CPM® Studio")
 st.markdown("**منصة الذكاء الاصطناعي لإدارة المشاريع الثقافية والإبداعية**")
 st.markdown("*مبنية على إطار CAB-CPM® – Value Engineering & Meaning Systems*")
 st.markdown("---")
 
-# === وكيل ذكي (Qwen + Multi-Agent) ===
+# === وكيل ذكي ===
 with st.expander("وكيل ذكي: أسأل عن منهجية CAB-CPM®", expanded=True):
     st.markdown("**مدعوم بـ Qwen (Alibaba Cloud) + وكيل محلي (Ollama)**")
 
@@ -171,7 +160,7 @@ with st.expander("وكيل ذكي: أسأل عن منهجية CAB-CPM®", expand
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             except Exception as e:
                 st.error(f"فشل في توليد الرد: {e}")
-                st.info("تأكد من:\n- DashScope API key (في Secrets)\n- أو تشغيل Ollama محليًا (`ollama serve`)")
+                st.info("تأكد من:\n- DashScope API key (في .streamlit/secrets.toml)\n- أو تشغيل Ollama محليًا (`ollama serve`)")
 
 # === جمع بيانات المشاركين ===
 st.markdown("---")
